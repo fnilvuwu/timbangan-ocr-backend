@@ -15,10 +15,18 @@ class TransactionOut(BaseModel):
     stage: str | None = None
     serial_no: str | None = None
     relation_name: str | None = None
+    driver_name: str | None = None
     origin_tbs: str | None = None
     entry_timestamp: datetime | None = None
     exit_timestamp: datetime | None = None
     potongan_percent: float | None = None
+    total_potongan_percent: float | None = None
+    total_potongan_weight: float | None = None
+    sampah_percent: float | None = None
+    air_percent: float | None = None
+    wajib_percent: float | None = None
+    t_panjang_percent: float | None = None
+    j_kosong_percent: float | None = None
     pengiriman_brd: float | None = None
     inbound_weight: float | None = None
     outbound_weight: float | None = None
@@ -26,6 +34,7 @@ class TransactionOut(BaseModel):
     bruto_weight: float
     tara_weight: float
     netto_weight: float
+    keterangan: str | None = None
     captured_image_path: str
     cropped_image_path: str | None = None
     inbound_captured_image_path: str | None = None

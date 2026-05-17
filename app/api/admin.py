@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.api.transactions import get_current_user
 from app.core.security import hash_password
 from app.db.session import get_db
 from app.models.ramp import Ramp
-from app.models.store import Store
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.admin import (
@@ -15,12 +15,18 @@ from app.schemas.admin import (
     RampCreateRequest,
     RampOut,
     RampUpdateRequest,
-    StoreCreateRequest,
-    StoreOut,
-    StoreUpdateRequest,
 )
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
+
+
+router = APIRouter(
+    prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)]
+)
 VALID_ROLES = {"admin", "employee"}
 
 
@@ -29,62 +35,6 @@ def normalize_optional_text(value: str | None) -> str | None:
         return None
     cleaned = value.strip()
     return cleaned if cleaned else None
-
-
-@router.get("/stores", response_model=list[StoreOut])
-def list_stores(db: Session = Depends(get_db)) -> list[StoreOut]:
-    stores = db.query(Store).order_by(Store.created_at.desc()).all()
-    return [StoreOut.model_validate(store) for store in stores]
-
-
-@router.post("/stores", response_model=StoreOut, status_code=status.HTTP_201_CREATED)
-def create_store(
-    payload: StoreCreateRequest, db: Session = Depends(get_db)
-) -> StoreOut:
-    name = payload.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Store name cannot be empty")
-
-    store = Store(name=name)
-    db.add(store)
-    db.commit()
-    db.refresh(store)
-    return StoreOut.model_validate(store)
-
-
-@router.put("/stores/{store_id}", response_model=StoreOut)
-def update_store(
-    store_id: int, payload: StoreUpdateRequest, db: Session = Depends(get_db)
-) -> StoreOut:
-    store = db.query(Store).filter(Store.id == store_id).first()
-    if not store:
-        raise HTTPException(status_code=404, detail="Store not found")
-
-    name = payload.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Store name cannot be empty")
-
-    store.name = name
-    db.commit()
-    db.refresh(store)
-    return StoreOut.model_validate(store)
-
-
-@router.delete("/stores/{store_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_store(store_id: int, db: Session = Depends(get_db)) -> None:
-    store = db.query(Store).filter(Store.id == store_id).first()
-    if not store:
-        raise HTTPException(status_code=404, detail="Store not found")
-
-    assigned_users = db.query(User).filter(User.store_id == store_id).first()
-    if assigned_users:
-        raise HTTPException(
-            status_code=400,
-            detail="Store has assigned employees. Reassign them before deleting the store.",
-        )
-
-    db.delete(store)
-    db.commit()
 
 
 @router.get("/ramps", response_model=list[RampOut])
@@ -165,8 +115,8 @@ def delete_ramp(ramp_id: int, db: Session = Depends(get_db)) -> None:
 @router.get("/employees", response_model=list[EmployeeOut])
 def list_employees(db: Session = Depends(get_db)) -> list[EmployeeOut]:
     users = db.query(User).order_by(User.created_at.desc()).all()
-    stores = db.query(Store).all()
-    store_map = {store.id: store.name for store in stores}
+    ramps = db.query(Ramp).all()
+    ramp_map = {ramp.id: ramp.name for ramp in ramps}
 
     return [
         EmployeeOut(
@@ -174,8 +124,8 @@ def list_employees(db: Session = Depends(get_db)) -> list[EmployeeOut]:
             name=user.name,
             email=user.email,
             role=user.role,
-            store_id=user.store_id,
-            store_name=store_map.get(user.store_id) if user.store_id else None,
+            ramp_id=user.ramp_id,
+            ramp_name=ramp_map.get(user.ramp_id) if user.ramp_id else None,
             created_at=user.created_at,
         )
         for user in users
@@ -191,37 +141,41 @@ def create_employee(
     if payload.role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Role must be admin or employee")
 
+    if payload.role == "employee" and payload.ramp_id is None:
+        raise HTTPException(status_code=400, detail="Ramp is required for employees")
+
     existing_user = db.query(User).filter(User.email == payload.email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    if payload.store_id:
-        store = db.query(Store).filter(Store.id == payload.store_id).first()
-        if not store:
-            raise HTTPException(status_code=404, detail="Store not found")
+    ramp = None
+    if payload.ramp_id is not None:
+        ramp = db.query(Ramp).filter(Ramp.id == payload.ramp_id).first()
+        if not ramp:
+            raise HTTPException(status_code=404, detail="Ramp not found")
+        if not ramp.is_active:
+            raise HTTPException(status_code=400, detail="Ramp is inactive")
 
     user = User(
         name=payload.name.strip(),
         email=payload.email,
         password_hash=hash_password(payload.password),
         role=payload.role,
-        store_id=payload.store_id,
+        ramp_id=payload.ramp_id,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    store_name = None
-    if user.store_id:
-        store_name = db.query(Store).filter(Store.id == user.store_id).first().name
+    ramp_name = ramp.name if ramp else None
 
     return EmployeeOut(
         id=user.id,
         name=user.name,
         email=user.email,
         role=user.role,
-        store_id=user.store_id,
-        store_name=store_name,
+        ramp_id=user.ramp_id,
+        ramp_name=ramp_name,
         created_at=user.created_at,
     )
 
@@ -237,6 +191,9 @@ def update_employee(
     if payload.role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Role must be admin or employee")
 
+    if payload.role == "employee" and payload.ramp_id is None:
+        raise HTTPException(status_code=400, detail="Ramp is required for employees")
+
     email_owner = (
         db.query(User)
         .filter(User.email == payload.email, User.id != employee_id)
@@ -245,30 +202,31 @@ def update_employee(
     if email_owner:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    if payload.store_id:
-        store = db.query(Store).filter(Store.id == payload.store_id).first()
-        if not store:
-            raise HTTPException(status_code=404, detail="Store not found")
+    ramp = None
+    if payload.ramp_id is not None:
+        ramp = db.query(Ramp).filter(Ramp.id == payload.ramp_id).first()
+        if not ramp:
+            raise HTTPException(status_code=404, detail="Ramp not found")
+        if not ramp.is_active:
+            raise HTTPException(status_code=400, detail="Ramp is inactive")
 
     user.name = payload.name.strip()
     user.email = payload.email
     user.role = payload.role
-    user.store_id = payload.store_id
+    user.ramp_id = payload.ramp_id
 
     db.commit()
     db.refresh(user)
 
-    store_name = None
-    if user.store_id:
-        store_name = db.query(Store).filter(Store.id == user.store_id).first().name
+    ramp_name = ramp.name if ramp else None
 
     return EmployeeOut(
         id=user.id,
         name=user.name,
         email=user.email,
         role=user.role,
-        store_id=user.store_id,
-        store_name=store_name,
+        ramp_id=user.ramp_id,
+        ramp_name=ramp_name,
         created_at=user.created_at,
     )
 

@@ -8,7 +8,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     role: str = "employee"
-    store_id: int | None = None
+    ramp_id: int | None = None
 
 
 class LoginRequest(BaseModel):
@@ -21,7 +21,7 @@ class UserOut(BaseModel):
     name: str
     email: EmailStr
     role: str
-    store_id: int | None = None
+    ramp_id: int | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

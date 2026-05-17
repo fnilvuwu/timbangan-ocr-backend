@@ -14,10 +14,18 @@ NEW_TRANSACTION_COLUMNS = {
     "stage",
     "serial_no",
     "relation_name",
+    "driver_name",
     "origin_tbs",
     "entry_timestamp",
     "exit_timestamp",
     "potongan_percent",
+    "total_potongan_percent",
+    "total_potongan_weight",
+    "sampah_percent",
+    "air_percent",
+    "wajib_percent",
+    "t_panjang_percent",
+    "j_kosong_percent",
     "pengiriman_brd",
     "inbound_weight",
     "outbound_weight",
@@ -47,6 +55,19 @@ def _ensure_ramps_table(engine: Engine) -> None:
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """))
+
+
+def _ensure_users_ramp_column(engine: Engine) -> None:
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("users")}
+    if "ramp_id" in columns:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE users ADD COLUMN ramp_id INTEGER"))
 
 
 def _migrate_legacy_transactions(engine: Engine) -> None:
@@ -123,10 +144,18 @@ def _add_missing_transaction_columns(engine: Engine, columns: set[str]) -> None:
         "stage": "ALTER TABLE transactions ADD COLUMN stage VARCHAR(30) NOT NULL DEFAULT 'completed'",
         "serial_no": "ALTER TABLE transactions ADD COLUMN serial_no VARCHAR(32)",
         "relation_name": "ALTER TABLE transactions ADD COLUMN relation_name VARCHAR(120)",
+        "driver_name": "ALTER TABLE transactions ADD COLUMN driver_name VARCHAR(120)",
         "origin_tbs": "ALTER TABLE transactions ADD COLUMN origin_tbs VARCHAR(120)",
         "entry_timestamp": "ALTER TABLE transactions ADD COLUMN entry_timestamp DATETIME",
         "exit_timestamp": "ALTER TABLE transactions ADD COLUMN exit_timestamp DATETIME",
         "potongan_percent": "ALTER TABLE transactions ADD COLUMN potongan_percent FLOAT",
+        "total_potongan_percent": "ALTER TABLE transactions ADD COLUMN total_potongan_percent FLOAT",
+        "total_potongan_weight": "ALTER TABLE transactions ADD COLUMN total_potongan_weight FLOAT",
+        "sampah_percent": "ALTER TABLE transactions ADD COLUMN sampah_percent FLOAT",
+        "air_percent": "ALTER TABLE transactions ADD COLUMN air_percent FLOAT",
+        "wajib_percent": "ALTER TABLE transactions ADD COLUMN wajib_percent FLOAT",
+        "t_panjang_percent": "ALTER TABLE transactions ADD COLUMN t_panjang_percent FLOAT",
+        "j_kosong_percent": "ALTER TABLE transactions ADD COLUMN j_kosong_percent FLOAT",
         "pengiriman_brd": "ALTER TABLE transactions ADD COLUMN pengiriman_brd FLOAT",
         "inbound_weight": "ALTER TABLE transactions ADD COLUMN inbound_weight FLOAT",
         "outbound_weight": "ALTER TABLE transactions ADD COLUMN outbound_weight FLOAT",
@@ -141,6 +170,7 @@ def _add_missing_transaction_columns(engine: Engine, columns: set[str]) -> None:
         "bruto_weight": "ALTER TABLE transactions ADD COLUMN bruto_weight FLOAT NOT NULL DEFAULT 0",
         "tara_weight": "ALTER TABLE transactions ADD COLUMN tara_weight FLOAT NOT NULL DEFAULT 0",
         "netto_weight": "ALTER TABLE transactions ADD COLUMN netto_weight FLOAT NOT NULL DEFAULT 0",
+        "keterangan": "ALTER TABLE transactions ADD COLUMN keterangan TEXT",
         "captured_image_path": "ALTER TABLE transactions ADD COLUMN captured_image_path VARCHAR(500) NOT NULL DEFAULT ''",
         "cropped_image_path": "ALTER TABLE transactions ADD COLUMN cropped_image_path VARCHAR(500)",
         "crop_points_json": "ALTER TABLE transactions ADD COLUMN crop_points_json TEXT",
@@ -192,6 +222,7 @@ def _add_missing_transaction_columns(engine: Engine, columns: set[str]) -> None:
 
 def run_schema_migrations(engine: Engine) -> None:
     _ensure_ramps_table(engine)
+    _ensure_users_ramp_column(engine)
 
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())

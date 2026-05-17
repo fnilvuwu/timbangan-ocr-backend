@@ -28,3 +28,26 @@ def decode_access_token(token: str) -> dict:
         return jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
     except JWTError as exc:
         raise ValueError("Invalid or expired token") from exc
+
+def create_ocr_token(extracted_numbers: list[str]) -> str:
+    expires_delta = timedelta(hours=1)
+    expire = datetime.now(timezone.utc) + expires_delta
+    payload = {"extracted_numbers": extracted_numbers, "exp": expire}
+    return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+
+def verify_ocr_token(token: str, weight: float) -> bool:
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+        extracted = payload.get("extracted_numbers", [])
+        weight_str = str(weight)
+        # Check if the float representation matches any string in the extracted array
+        # or if the string itself is in the array
+        for num_str in extracted:
+            try:
+                if float(num_str) == weight:
+                    return True
+            except ValueError:
+                pass
+        return False
+    except JWTError:
+        return False

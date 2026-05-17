@@ -10,6 +10,7 @@ from app.api.admin import router as admin_router
 from app.api.transactions import router as transactions_router
 from app.api.invoice import router as invoice_router
 from app.api.ocr import router as ocr_router
+from app.api.employee import router as employee_router
 from app.core.config import settings
 from app.db.base import Base
 from app.db.migrations import run_schema_migrations
@@ -34,6 +35,7 @@ app.include_router(admin_router)
 app.include_router(transactions_router)
 app.include_router(invoice_router)
 app.include_router(ocr_router)
+app.include_router(employee_router)
 
 
 @app.on_event("startup")
@@ -41,6 +43,20 @@ def startup() -> None:
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
     run_schema_migrations(engine)
     Base.metadata.create_all(bind=engine)
+    
+    from sqlalchemy.orm import Session
+    from app.core.security import hash_password
+    with Session(engine) as db:
+        admin_exists = db.query(User).filter(User.role == "admin").first()
+        if not admin_exists:
+            new_admin = User(
+                name="System Admin",
+                email=settings.admin_email,
+                password_hash=hash_password(settings.admin_password),
+                role="admin"
+            )
+            db.add(new_admin)
+            db.commit()
 
 
 @app.get("/")

@@ -14,4 +14,5 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     role = Column(String(20), default="employee", nullable=False)
     store_id = Column(Integer, ForeignKey("stores.id"), nullable=True)
+    ramp_id = Column(Integer, ForeignKey("ramps.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
